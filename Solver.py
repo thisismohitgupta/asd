@@ -165,6 +165,7 @@ class Solver(object):
 
         # Perform a parameter update
         for p, w in self.model.params.iteritems():
+            #print p
             dw = grads[p]
             config = self.optim_configs[p]
             next_w, next_config = self.update_rule(w, dw, config)
@@ -233,6 +234,12 @@ class Solver(object):
             if epoch_end:
                 self.epoch += 1
                 for k in self.optim_configs:
+
+                    if self.epoch is 6 or self.epoch is 14:
+                        self.lr_decay = 0.1
+                    else:
+                        self.lr_decay = 1.0
+
                     self.optim_configs[k]['learning_rate'] *= self.lr_decay
 
             # Check train and val accuracy on the first iteration, the last

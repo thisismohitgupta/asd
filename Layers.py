@@ -127,15 +127,16 @@ class Layers:
 
         eps = bn_param.get('eps', 1e-5)
 
-        momentum = bn_param.get('momentum', 0.9)
+        momentum = bn_param.get('momentum', 0.1)
 
-        print x.shape
+        #print x.shape
         N, D = x.shape
 
         running_mean = bn_param.get('running_mean', np.zeros(D, dtype=x.dtype))
 
         running_var = bn_param.get('running_var', np.zeros(D, dtype=x.dtype))
-
+        
+        #print running_mean
         out, cache = None, None
         if mode == 'train':
             #############################################################################
@@ -199,7 +200,7 @@ class Layers:
         # Store the updated running means back into bn_param
         bn_param['running_mean'] = running_mean
         bn_param['running_var'] = running_var
-
+        #print bn_param['running_mean']
         return out, cache
 
     def batchnorm_backward(self,dout, cache):
@@ -379,7 +380,7 @@ class Layers:
             ###########################################################################
 
             #dDivp = dout / dropout_param['p']
-            print mask
+            #print mask
             dx = mask * dout
             pass
             ###########################################################################
@@ -401,7 +402,30 @@ class Layers:
         dx /= N
         return loss, dx
 
-    def conv_forward_naive( self, x, w, b, conv_param):
+    def log_softmax_loss(self,x, y):
+        '''
+        Computes the loss and gradient for softmax classification.
+
+        Inputs:
+        - x: Input data, of shape (N, C) where x[i, j] is the score for the jth class
+          for the ith input.
+        - y: Vector of labels, of shape (N,) where y[i] is the label for x[i] and
+          0 <= y[i] < C
+
+        Returns a tuple of:
+        - loss: Scalar giving the loss
+        - dx: Gradient of the loss with respect to x
+        '''
+        N = x.shape[0]
+        xdev = x - x.max(1, keepdims=True)
+        logp = xdev - np.log(np.sum(np.exp(xdev), axis=1, keepdims=True))
+        loss = -np.mean(logp[np.arange(N), y])
+
+        dx = np.exp(logp)
+        dx[np.arange(N), y] -= 1
+        dx /= N
+        return loss, dx
+    def conv_forward_naive(self,x, w, b, conv_param):
         """
         A naive implementation of the forward pass for a convolutional layer.
 
@@ -429,60 +453,62 @@ class Layers:
         # TODO: Implement the convolutional forward pass.                           #
         # Hint: you can use the function np.pad for padding.                        #
         #############################################################################
-        F, C, HH , WW = w.shape
-
-        N, C, H, W = x.shape
-
-        stride = conv_param["stride"]
-        pad = conv_param["pad"]
-        WandH = 1 + ((H + ( pad * 2 ) - HH) / stride)   #usually square images so no need to add useless computation
+        N = x.shape[0]
+        F = w.shape[0]
+        H = x.shape[2]
+        W = x.shape[3]
+        stride = conv_param['stride']
+        pad = conv_param['pad']
+        HH = w.shape[2]
+        WW = w.shape[3]
+        h = 1 + (H + 2 * pad - HH) / stride
+        wid = 1 + (W + 2 * pad - WW) / stride
+        # pad the shit
+        C = x.shape[1]
+        out = np.zeros((N, F, h, wid))
         z = np.zeros((N, C, H + 2 * pad, W + 2 * pad))
-        out = np.zeros((N,F,WandH,WandH))
-
         for n in range(N):
+            for c in range(C):
+                z[n, c] = np.pad(x[n, c], pad, 'constant', constant_values=0)
 
-            z[n, :,:,:] = np.pad(x[n,:,:,:], ((0,0),(pad,pad),(pad,pad)), 'constant', constant_values=0)
+        # print b[7]
+        # for 1 filter
+        for n in range(N):
             for f in range(F):
-                for hh in range(WandH):
-                    for ww in range(WandH):
+                for hh in range(h):
+                    for ww in range(wid):
+                        out[n, f, hh, ww] = np.sum(
+                            z[n, :, (hh * stride):(HH + (hh * stride)), (ww * stride):(HH + (ww * stride))] * w[f, :]) + \
+                                            b[f]
 
-
-                        widthStart = stride * ww
-                        widthEnd = WW + widthStart
-                        heightStart = hh * stride
-                        heightEnd = HH + heightStart
-
-                        out[n,f,hh,ww] = np.sum(z[n, :, heightStart:heightEnd, widthStart:widthEnd] * (w[f, :])) + b[f]
-
-
-        cache = x, w, b, conv_param
+        pass
+        #############################################################################
+        #                             END OF YOUR CODE                              #
+        #############################################################################
+        cache = (x, w, b, conv_param)
         return out, cache
 
-    def conv_backward_naive( self, dout, cache):
+    def conv_backward_naive(self,dout, cache):
         """
-          A naive implementation of the backward pass for a convolutional layer.
+        A naive implementation of the backward pass for a convolutional layer.
 
-          Inputs:
-          - dout: Upstream derivatives.
-          - cache: A tuple of (x, w, b, conv_param) as in conv_forward_naive
+        Inputs:
+        - dout: Upstream derivatives.
+        - cache: A tuple of (x, w, b, conv_param) as in conv_forward_naive
 
-          Returns a tuple of:
-          - dx: Gradient with respect to x
-          - dw: Gradient with respect to w
-          - db: Gradient with respect to b
-          """
+        Returns a tuple of:
+        - dx: Gradient with respect to x
+        - dw: Gradient with respect to w
+        - db: Gradient with respect to b
+        """
         dx, dw, db = None, None, None
         #############################################################################
         # TODO: Implement the convolutional backward pass.                          #
         #############################################################################
-        x, w, b ,conv_param = cache
-
-        N, C, H, W = x.shape
-
-        F, _, HH, WW = w.shape  # _  = C since the depth in a convolution layer remains the same
-
-        _, _, H_prime, W_prime = dout.shape
-
+        (x, w, b, conv_param) = cache
+        (N, C, H, W) = x.shape
+        (F, _, HH, WW) = w.shape
+        (_, _, H_prime, W_prime) = dout.shape
         stride = conv_param['stride']
         pad = conv_param['pad']
 
@@ -490,29 +516,27 @@ class Layers:
         dw = np.zeros_like(w)
         db = np.zeros_like(b)
 
-        for n in range(N):
-            dx_pad = np.pad(dx[n,:,:,:],((0,0),(pad,pad),(pad,pad)) ,"constant")
-            x_pad = np.pad(x[n,:,:,:],((0,0),(pad,pad),(pad,pad)) ,"constant")
-
-            for f in range(F):
-
-                for h_prime in range(H_prime):
-
-                    for w_prime in range(W_prime):
+        for n in xrange(N):
+            dx_pad = np.pad(dx[n, :, :, :], ((0, 0), (pad, pad), (pad, pad)), 'constant')
+            x_pad = np.pad(x[n, :, :, :], ((0, 0), (pad, pad), (pad, pad)), 'constant')
+            for f in xrange(F):
+                for h_prime in xrange(H_prime):
+                    for w_prime in xrange(W_prime):
                         h1 = h_prime * stride
                         h2 = h_prime * stride + HH
                         w1 = w_prime * stride
                         w2 = w_prime * stride + WW
-
-                        db[f] += dout[n,f,h_prime,w_prime]
-
-                        dw[f,:,:,:] += x_pad[:,h1:h2,w1:w2] * dout[n,f,h_prime,w_prime]
-
-                        dx_pad[:,h1:h2,w1:w2] += w[f,:,:,:] * dout[n,f,h_prime,w_prime]
-            dx[n,:,:,:] = dx_pad[:,pad:-pad,pad:-pad]  # depad the output
-
-
-        print dw.shape
+                        dx_pad[:, h1:h2, w1:w2] += w[f, :, :, :] * dout[n, f, h_prime, w_prime]
+                        dw[f, :, :, :] += x_pad[:, h1:h2, w1:w2] * dout[n, f, h_prime, w_prime]
+                        db[f] += dout[n, f, h_prime, w_prime]
+            if pad > 0 :
+                dx[n, :, :, :] = dx_pad[:, pad:-pad, pad:-pad]
+            else:
+                dx[n, :, :, :] = dx_pad[:, :, :]
+        pass
+        #############################################################################
+        #                             END OF YOUR CODE                              #
+        #############################################################################
         return dx, dw, db
 
     def max_pool_forward_naive(self,x, pool_param):
@@ -633,7 +657,7 @@ class Layers:
         - cache: Values needed for the backward pass
         """
         out, cache = None, None
-
+        
         #############################################################################
         # TODO: Implement the forward pass for spatial batch normalization.         #
         #                                                                           #
@@ -642,9 +666,9 @@ class Layers:
         # be very short; ours is less than five lines.                              #
         #############################################################################
         N, C, H, W = x.shape
-        temp, cache = self.batchnorm_forward(x.transpose(0, 3, 2, 1).reshape(N * W * H, C), gamma, beta, bn_param)
+        temp, cache = self.batchnorm_forward(x.transpose(0, 2,3, 1).reshape(N * H*W , C), gamma, beta, bn_param)
 
-        out = temp.reshape(N, W, H, C).transpose(0, 3, 2, 1)
+        out = temp.reshape(N, H, W, C).transpose(0, 3, 1, 2)
 
         pass
         #############################################################################
@@ -683,8 +707,8 @@ class Layers:
 
         # dx = temp.reshape(N,W,H,C).transpose(0,3,2,1)
         N, C, H, W = dout.shape
-        dx_temp, dgamma, dbeta = self.batchnorm_backward_alt(dout.transpose(0, 3, 2, 1).reshape((N * W * H, C)), cache)
-        dx = dx_temp.reshape(N, W, H, C).transpose(0, 3, 2, 1)
+        dx_temp, dgamma, dbeta = self.batchnorm_backward_alt(dout.transpose(0, 2, 3, 1).reshape((N * H * W, C)), cache)
+        dx = dx_temp.reshape(N, H, W, C).transpose(0, 3, 1, 2)
 
         pass
         #############################################################################
@@ -693,7 +717,7 @@ class Layers:
 
         return dx, dgamma, dbeta
 
-    def resNetUnit_forward( self, x, w1, b1, w2, b2, conv_param):
+    def resNetUnit_forward( self, x, w1, b1, w2, b2,gamma1,beta1,gamma2,beta2 ,bn_params_1 , bn_params_2, CW,Cb,conv_param1,conv_param2):
         """
             A naive implementation of the backward pass for a convolutional layer.
 
@@ -706,31 +730,72 @@ class Layers:
             - dw: Gradient with respect to w
             - db: Gradient with respect to b
         """
-
         from faster.fast_layers import conv_forward_fast
+        #print "i"
 
-        filters1 , cache1 = conv_forward_fast(x, w1, b1, conv_param)
-
-        relu , rcache = self.relu_forward(filters1)
-
-        filters2, cache2 = conv_forward_fast(relu, w2, b2, conv_param)
-
-        print filters2.shape
-
-        if filters2.shape[1] > x.shape[1]:
-            x_pad = np.pad(x, ((0, 0), (0,filters2.shape[1] - x.shape[1] ), (0, 0), (0, 0)), 'constant', constant_values=0)
+        if conv_param1["stride"] == 2:
+            x1 = np.pad(x, ((0, 0), (0, 0), (1, 0), (1, 0)), mode='constant')
         else:
+            x1 = x
+        conv_layer_1 , conv_layer1_cache = conv_forward_fast(x1, w1, b1, conv_param1)
+
+        #print "conv1 for ", conv_layer_1.shape
+        
+        bachnorm_layer_1 , bachnorm_layer_1_cache  = self.spatial_batchnorm_forward(conv_layer_1,gamma1,beta1,bn_params_1)
+        
+        
+        relu , relu_cache = self.relu_forward(bachnorm_layer_1)
+             
+       
+        conv_layer_2, conv_layer2_cache = conv_forward_fast(relu, w2, b2, conv_param2)
+
+        
+        bachnorm_layer_2 ,bachnorm_layer_2_cache  = self.spatial_batchnorm_forward(conv_layer_2,gamma2,beta2,bn_params_2)
+        
+        #print conv_layer_1.shape
+
+        if bachnorm_layer_2.shape[1] > x.shape[1]:
+            #print "shape is different"
+            
+            
+            #print bachnorm_layer_2.shape , x.shape
+            conv_param = {'stride': 2, 'pad': 0}
+            
+            
+            #print "x1 shape ", x1.shape
+            #print "W1 shape ", CW.shape
+            
+            #x_pad, x_pad_cache = conv_forward_fast(x1, CW,Cb, conv_param)
+            
+            
+            #pad = (bachnorm_layer_2.shape[1] - x.shape[1]) / 2
+            #pad2 = -(bachnorm_layer_2.shape[2] - x.shape[2]) / 2
+            #pad3 = -(bachnorm_layer_2.shape[3] - x.shape[3]) / 2
+            #x_pad = np.pad(x, ((0, 0), (pad ,pad ), (0, 0), (0, 0)), 'constant', constant_values=0)
+            #x_pad = np.pad(x_pad[:,:,:,:], ( (0, 0), (0, 0)), 'constant', constant_values=0)
+            #bachnorm_layer_2 = np.pad(bachnorm_layer_2, ((0, 0), (0 ,0 ), (pad2, pad2), (pad3, pad3)), 'constant', constant_values=0)
+
+            out_shape = w1.shape[0]
+            x_pad, x_pad_cache = self.skip_forward(x, out_shape)
+            
+        else:
+            #print "shape is OK"
             x_pad = x
+            x_pad_cache = x
 
-        print x_pad.shape
+        
 
-        addition = filters2 #+ x_pad
+        addition = np.add(bachnorm_layer_2, x_pad)
+        bachnorm_layer_2 += x_pad
+        out, relu_cache_2 = self.relu_forward(bachnorm_layer_2)
 
-        out, rcahce2 = self.relu_forward(addition)
+        return out, conv_layer1_cache, relu_cache, conv_layer2_cache, relu_cache_2, x_pad_cache , bachnorm_layer_1_cache , bachnorm_layer_2_cache
+    
+    
+    
+    
 
-        return out, cache1, rcache, cache2, rcahce2, x_pad
-
-    def resNetUnit_backward(self,dout, cache1, rcache, cache2, rcahce2):
+    def resNetUnit_backward(self,dout, cache1, rcache, cache2, rcahce2, bachnorm_layer_1_cache , bachnorm_layer_2_cache,x_pad_cache):
 
         from faster.fast_layers import conv_backward_fast
 
@@ -738,22 +803,244 @@ class Layers:
 
         dout = drelu2
 
-        dconv2,dw2,db2 = conv_backward_fast(drelu2,cache2)
+        #print "relu2 back"
+        
+        
+        dbachnorm_2,dgamma2,dbeta2 = self.spatial_batchnorm_backward (drelu2,  bachnorm_layer_2_cache)
+        
+        dconv2,dw2,db2 = conv_backward_fast(dbachnorm_2,cache2)
 
 
         drelu1 = self.relu_backward(dconv2, rcache)
+        
+        dbachnorm_1,dgamma1,dbeta1 = self.spatial_batchnorm_backward (drelu1,  bachnorm_layer_1_cache)
+        
 
-        dx, dw1, db1 = conv_backward_fast(drelu1,cache1)
+        dx, dw1, db1 = conv_backward_fast(dbachnorm_1,cache1)
 
 
         if dout.shape[1] > dx.shape[1]:
-            pad = dout.shape[1] - dx.shape[1]
 
-            dout_unpad = dout[:,:(dout.shape[1]-pad),:,:]
+
+            dx= dx[:,:,1:,1:]
+            #pad = dout.shape[1] - dx.shape[1]
+            #print "shape is different"
+            #print len(x_pad_cache)
+            #dout_unpad,dCW,dCb = conv_backward_fast(dout,x_pad_cache)
+            #dout_unpad = dout[:,(dout.shape[1]-pad)/2:-((dout.shape[1]-pad)/2),:,:]
+            dout_unpad = self.skip_backward(dout,x_pad_cache)
+            dCW, dCb = 0, 0
+            #dout_unpad = dout
         else:
+            #print "shape is ok"
             dout_unpad = dout
-
+            dCW,dCb = 0 ,0
 
         dout_unpad += dx
 
-        return dout_unpad , dw1 , db1 , dw2 , db2
+        return dout_unpad, dw1, db1, dw2, db2, dgamma1, dbeta1, dgamma2, dbeta2,dCW,dCb                              
+       
+    def resNetUnit_forward2( self, x, params):
+        """
+            A naive implementation of the backward pass for a convolutional layer.
+
+
+        Inputs-
+            -X
+            -params['W1'] = w
+            -params['b1'] = b
+            params['W2'] = 0
+            params['b2'] = 0
+            params['gamma1'] = 0
+            params['beta1'] = 0
+            params['gamma2'] = 0
+            params['beta2'] = 0
+            params['bn_params_1'] = 0
+            params['bn_params_2'] = 0
+            params['CW1'] = 0
+            params['Cb1'] = 0
+            params['conv_param1'] = 0
+            params['conv_param2'] = 0
+        
+        
+        Returns a tuple of:
+            - dx: Gradient with respect to x
+            - dw: Gradient with respect to w
+            - db: Gradient with respect to b
+        
+        """
+        
+        cache = {}
+        from faster.fast_layers import conv_forward_fast
+
+        conv_layer_1 , cache['conv_cache_1'] = self.conv_forward_naive(x, params['W1'], params['b1'], params['conv_param1'] )
+
+        #print "conv1 for"
+        
+        #bachnorm_layer_1 , bachnorm_layer_1_cache  = self.spatial_batchnorm_forward(conv_layer_1,gamma1,beta1,bn_params_1)
+        
+        
+        relu , cache['relu_cache_1'] = self.relu_forward(x)
+             
+       
+        conv_layer_2, cache['conv_cache_2'] = conv_forward_fast(relu, params['W2'], params['b2'], params['conv_param2'] ) #1.97902483e+01
+
+        
+        #bachnorm_layer_2 ,bachnorm_layer_2_cache  = self.spatial_batchnorm_forward(conv_layer_2,gamma2,beta2,bn_params_2)
+        
+        #print conv_layer_1.shape
+
+        #if bachnorm_layer_2.shape[1] > x.shape[1]:
+            #print "shape is different"
+            
+            
+            #print bachnorm_layer_2.shape , x.shape
+            #conv_param = {'stride': 2, 'pad': 0}
+            
+            
+            
+            
+            #x_pad, x_pad_cache = conv_forward_fast(x, CW,Cb, conv_param)
+            
+            
+            #pad = (bachnorm_layer_2.shape[1] - x.shape[1]) / 2
+            #pad2 = -(bachnorm_layer_2.shape[2] - x.shape[2]) / 2
+            #pad3 = -(bachnorm_layer_2.shape[3] - x.shape[3]) / 2
+            #x_pad = np.pad(x, ((0, 0), (pad ,pad ), (0, 0), (0, 0)), 'constant', constant_values=0)
+            #x_pad = np.pad(x_pad[:,:,:,:], ( (0, 0), (0, 0)), 'constant', constant_values=0)
+            #bachnorm_layer_2 = np.pad(bachnorm_layer_2, ((0, 0), (0 ,0 ), (pad2, pad2), (pad3, pad3)), 'constant', constant_values=0)
+            
+            
+        #else:
+            #print "shape is OK"
+            #x_pad = x
+            #x_pad_cache = x
+
+        
+
+        #addition = np.add(bachnorm_layer_2, x_pad)
+
+        #out, relu_cache_2 = self.relu_forward(addition)
+        
+        
+        
+        #relu_cache, conv_layer2_cache, relu_cache_2, x_pad_cache , bachnorm_layer_1_cache , bachnorm_layer_2_cache = 0,0,0,0,0,0
+        out = conv_layer_2
+        
+        #print out.shape
+        return out, cache
+    
+    
+    
+    
+
+    def resNetUnit_backward2(self,dout,cache ):
+
+        
+        
+        
+        
+        """
+            input
+                cache-
+                    -cache['conv_cache_1']
+        """
+        from faster.fast_layers import conv_backward_fast
+
+        dgrad = {}
+        #print dout
+        dx = self.relu_backward(dout, cache['relu_cache_1'])
+
+        #dout = drelu2
+        #cache1, rcache, cache2, rcahce2, bachnorm_layer_1_cache , bachnorm_layer_2_cache,x_pad_cache
+        #print "relu2 back"
+        
+        
+        #dbachnorm_2,dgamma2,dbeta2 = self.spatial_batchnorm_backward (drelu2,  bachnorm_layer_2_cache)
+        
+        #dconv2,dw2,db2 = conv_backward_naive(dout,cache['conv_cache_2'])
+
+
+        #drelu1 = self.relu_backward(dconv2, rcache)
+        
+        #dbachnorm_1,dgamma1,dbeta1 = self.spatial_batchnorm_backward (drelu1,  bachnorm_layer_1_cache)
+        
+        #print cache['conv_cache_1']
+        #dx, dgrad['W1'], dgrad['b1'] = self.conv_backward_naive(drelu2,cache['conv_cache_1'])
+
+
+        #if dout.shape[1] > dx.shape[1]:
+            #pad = dout.shape[1] - dx.shape[1]
+            #print "shape is different"
+            #print len(x_pad_cache)
+            #dout_unpad,dCW,dCb = conv_backward_fast(dout,x_pad_cache)
+            #dout_unpad = dout[:,(dout.shape[1]-pad)/2:-((dout.shape[1]-pad)/2),:,:]
+            
+            
+            #dout_unpad = dout
+        #else:
+            #print "shape is ok"
+            #dout_unpad = dout
+            #dCW,dCb = 0 ,0
+
+        #dout_unpad += dx
+        dout_unpad = dx
+        #dw2, db2, dgamma1, dbeta1, dgamma2, dbeta2,dCW,dCb = 0,0,0,0,0,0,0,0
+        #print dx.shape
+        return dx, dgrad
+
+    def skip_forward(self,x, n_out_channels):
+        '''
+        Computes the forward pass for a skip connection.
+        The input x has shape (N, d_1, d_2, d_3) where x[i] is the ith input.
+        If n_out_channels is equal to 2* d_1, downsampling and padding are applied
+        else, the input is replicated in output
+        Inputs:
+        x - Input data, of shape (N, d_1, d_2, d_3)
+        n_out_channels - Number of channels in output
+        Returns a tuple of:
+        - skip: output, of shape (N, n_out_channels,  d_2/2, d_3/2)
+        - cache: (pool_cache, downsampled, skip_p)
+        '''
+        N, n_in_channels, H, W = x.shape
+        assert (n_in_channels == n_out_channels) or (
+            n_out_channels == n_in_channels * 2), 'Invalid n_out_channels'
+        skip = np.array(x, copy=True)
+        pool_cache, downsampled, skip_p = None, False, 0
+
+        if n_out_channels > n_in_channels:
+            # downsampling
+            pool_param = {'pool_width': 2, 'pool_height': 2, 'stride': 2}
+            from faster.fast_layers import avg_pool_forward_fast
+            skip, pool_cache = avg_pool_forward_fast(skip, pool_param)
+            # padding
+            p = skip_p = (n_in_channels) / 2
+            skip = np.pad(skip, ((0, 0), (p, p), (0, 0), (0, 0)),
+                          mode='constant')
+
+            downsampled = True
+
+        return skip, (pool_cache, downsampled, skip_p)
+
+    def skip_backward(self,dout, cache):
+        '''
+        Computes the backward pass for a skip connection.
+        The input x has shape (N, d_1, d_2, d_3) where x[i] is the ith input.
+        If n_out_channels was equal to 2* d_1, we back-apply downsampling and padding,
+        else, the input is replicated in output
+        Returns:
+        - dskip: Gradient with respect to x, of shape (N, d1, ..., d_k)
+        '''
+        pool_cache, downsampled, skip_p = cache
+        dskip = np.array(dout, copy=True)
+        if downsampled:
+            # back pad
+            dskip = dskip[:, skip_p:-skip_p, :, :]
+            # back downsampling
+            from faster.fast_layers import avg_pool_backward_fast
+            dskip = avg_pool_backward_fast(dskip, pool_cache)
+        return dskip
+    
+    
+    
+    

@@ -19,8 +19,8 @@ small_data = {
 
 from classifiers import cnn_huge as cnn
 
-res = cnn.ResNet()
-res.loss(data['X_train'][:num_train])
+#res = cnn.ResNet()
+#res.loss(data['X_train'][:num_train])
 
 # x = data['X_train'][:1]
 # w = np.random.randn(16, 16, 3, 3)
@@ -172,40 +172,64 @@ res.loss(data['X_train'][:num_train])
 
 from Layers import Layers
 from checks import Checks
+from faster.fast_layers import conv_forward_fast,conv_backward_fast
 
-# x_shape = (2, 3, 4, 4)
-# w_shape = (3, 3, 4, 4)
-# X = np.linspace(-0.1, 0.5, num=np.prod(x_shape)).reshape(x_shape)
-# w = np.linspace(-0.2, 0.3, num=np.prod(w_shape)).reshape(w_shape)
+
+
+# X = np.random.randn(4, 3, 5, 5)
+# w = np.random.randn(2, 3, 3, 3)
+# #X = np.linspace(-0.1, 0.5, num=np.prod(x_shape)).reshape(x_shape)
+# #w = np.linspace(-0.2, 0.3, num=np.prod(w_shape)).reshape(w_shape)
 # b = np.linspace(-0.1, 0.2, num=3)
 # gamma = np.random.rand(20)
-#
+# #
 # beta = np.random.randn(20)
-#
+# #
 # param = {}
 # param["mode"]= 'train'
 # param['p'] = 0.5
 # conv_param = {}
-# conv_param["stride"] = 2
+# conv_param["stride"] = 1
 # conv_param["pad"] = 1
 #
-# layers = Layers()
+layers = Layers()
+
+
+#print np.sum(correct_out - convolve_layer)
+
+def rel_error(x, y):
+  """ returns relative error """
+  return np.max(np.abs(x - y) / (np.maximum(1e-8, np.abs(x) + np.abs(y))))
+# X = np.random.randn(4, 3, 5, 5)
+# w = np.random.randn(2, 3, 3, 3)
+# b = np.random.randn(2,)
+# dout = np.random.randn(4, 2, 5, 5)
+# conv_param = {'stride': 1, 'pad': 1}
+#
 # convolve_layer,cout = layers.conv_forward_naive(X, w, b , conv_param )
-# correct_out = np.array([[[[[-0.08759809, -0.10987781],
-#                            [-0.18387192, -0.2109216]],
-#                           [[0.21027089, 0.21661097],
-#                            [0.22847626, 0.23004637]],
-#                           [[0.50813986, 0.54309974],
-#                            [0.64082444, 0.67101435]]],
-#                          [[[-0.98053589, -1.03143541],
-#                            [-1.19128892, -1.24695841]],
-#                           [[0.69108355, 0.66880383],
-#                            [0.59480972, 0.56776003]],
-#                           [[2.36270298, 2.36904306],
-#                            [2.38090835, 2.38247847]]]]])
 #
-# print np.sum(correct_out - convolve_layer)
+# dx,dw,db = layers.conv_backward_naive(convolve_layer,cout )
 #
+#
+#
+# check = Checks()
+#
+# print dx.shape
+# print convolve_layer.shape
+#
+#
+# dout = np.random.randn(4, 2, 5, 5)
+#
+# dx_num = check.eval_numerical_gradient_array(lambda X: layers.conv_forward_naive(X, w, b, conv_param)[0],X, dout)
+# dw_num = check.eval_numerical_gradient_array(lambda w: layers.conv_forward_naive(X, w, b, conv_param)[0],w, dout)
+# db_num = check.eval_numerical_gradient_array(lambda b: layers.conv_forward_naive(X, w, b, conv_param)[0],b, dout)
+#
+#
+#
+#
+# print 'dx error: ', np.sum(np.subtract(dx, dx_num))
+# print 'dw error: ', rel_error(dw, dw_num)
+# print 'db error: ', rel_error(db, db_num)
 # relu_f, cache2 = layers.relu_forward(convolve_layer)
 #
 # w1 = np.random.normal(scale=1e-3, size=(3*4*4/4, 20))
@@ -233,7 +257,6 @@ from checks import Checks
 # print np.sum(dconv[0] - check.eval_numerical_gradient_array(X,lambda X: layers.conv_forward_naive(X, w, b , conv_param )[0],convolve_layer))
 # #
 # # print "affine backward check"
-# # print np.sum(dx - check.eval_numerical_gradient_array(X,lambda x: layers.affine_foward(x,w,b)[0],out))
 # # print np.sum(dw - check.eval_numerical_gradient_array(w,lambda x: layers.affine_foward(X,w,b)[0],out))
 # # print np.sum(db - check.eval_numerical_gradient_array(b,lambda x: layers.affine_foward(X,w,b)[0],out))
 # # print "Relu backward check"
@@ -250,3 +273,82 @@ from checks import Checks
 # #print ddropout
 # #print check.eval_numerical_gradient_array(relu_f,lambda x: layers.dropout_forward(relu_f,param)[0],dropoutss)
 # #print check.eval_numerical_gradient_array(lambda beta: layers.batchnorm_forward(relu_f,gamma,beta,param)[0],beta,batch_norm).shape
+
+
+
+
+x = np.random.randn(4, 3, 5, 5)
+w = np.random.randn(2, 3, 3, 3)
+b = np.random.randn(2,)
+dout = np.random.randn(4, 2, 5, 5)
+conv_param = {'stride': 1, 'pad': 1}
+
+from Layers import Layers
+from checks import Checks
+from faster.fast_layers import conv_backward_fast ,conv_forward_fast
+
+
+
+ly = Layers()
+ck = Checks()
+dx_num = ck.eval_numerical_gradient_array(lambda x: conv_forward_fast(x, w, b, conv_param)[0], x, dout)
+dw_num = ck.eval_numerical_gradient_array(lambda w: conv_forward_fast(x, w, b, conv_param)[0], w, dout)
+db_num = ck.eval_numerical_gradient_array(lambda b: conv_forward_fast(x, w, b, conv_param)[0], b, dout)
+
+out, cache = conv_forward_fast(x, w, b, conv_param)
+
+#x, w, b, conv_param = cache
+dx, dw, db = conv_backward_fast(dout, cache)
+
+# Your errors should be around 1e-9'
+print 'Testing conv_backward_naive function'
+print 'dx error: ', rel_error(dx, dx_num)
+print 'dw error: ', rel_error(dw, dw_num)
+print 'db error: ', rel_error(db, db_num)
+
+variables = {}
+
+variables['W1'] = w
+variables['b1'] = b
+variables['conv_param1'] = conv_param
+
+variables['W2'] = w
+variables['b2'] = b
+variables['conv_param1'] = conv_param
+
+variables['gamma1'] = np.random.randn(3)
+variables['beta1'] = np.random.randn(3)
+variables['bn_params_1']= {}
+variables['bn_params_1']['mode'] =  "train"
+
+dx_num = ck.eval_numerical_gradient_array(lambda x: ly.resNetUnit_forward2(x, variables)[0], x, dout)
+#dw_num = ck.eval_numerical_gradient_array(lambda w: ly.resNetUnit_forward2(x, variables['W1'])['W1'], variables['W1'], dout)
+#db_num = ck.eval_numerical_gradient_array(lambda b: ly.resNetUnit_forward2(x, variables)['b1'], b, dout)
+
+#out, cache = conv_forward_fast(x, w, b, conv_param)
+#dx, dw, db = conv_backward_fast(dout, cache)
+dgrad = {}
+
+#print dx_num
+
+
+out2, caches = ly.resNetUnit_forward2(x, variables)
+
+dx, grads = ly.resNetUnit_backward2(out2 , caches)
+
+print dx_num
+
+
+print "d\n"
+print dx
+#print out
+# Your errors should be around 1e-9'
+print 'Testing conv_backward_naive function'
+print 'dx error: ', rel_error(dx, dx_num)
+#print 'dw error: ', rel_error(dw, dw_num)
+#print 'db error: ', rel_error(db, db_num)
+
+
+
+
+dw_num = ck.eval_numerical_gradient_array(lambda w: ly.spatial_batchnorm_forward(x, variables['W1'])['W1'], variables['W1'], dout)
