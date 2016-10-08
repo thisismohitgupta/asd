@@ -235,7 +235,7 @@ class Solver(object):
                 self.epoch += 1
                 for k in self.optim_configs:
 
-                    if self.epoch is 6 or self.epoch is 14:
+                    if self.epoch is 10 or self.epoch is 18:
                         self.lr_decay = 0.1
                     else:
                         self.lr_decay = 1.0
